@@ -15,9 +15,11 @@ urlpatterns = [
     # --- Main Interface ---
     # The dashboard view handles both displaying data and processing manual commands (like Square Off)
     path('dashboard/', views.dashboard_view, name='dashboard'),
+    path('fyers/callback/', views.fyers_callback_view, name='fyers_callback'),
 
     # --- Fyers OAuth Flow ---
     # This URL receives the 'auth_code' from Fyers after the user logs in
     # Make sure this matches the Redirect URI in your Fyers App Dashboard
-    path('auth/fyers/callback/', views.fyers_callback_view, name='fyers_callback'),
+    # path('auth/fyers/callback/', views.fyers_callback_view, name='fyers_callback'),
+
 ]
