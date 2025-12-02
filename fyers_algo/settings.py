@@ -7,9 +7,9 @@ env = environ.Env(
     # set casting and default value
     DEBUG=(bool, False),
     REDIS_URL=(str, 'redis://localhost:6379/0'),
-    FYERS_APP_ID=(str, 'YOUR_FYERS_APP_ID'),
-    FYERS_SECRET_KEY=(str, 'YOUR_FYERS_SECRET_KEY'),
-    FYERS_CALLBACK_URL=(str, 'http://127.0.0.1:8000/trading/auth/fyers/callback/')
+    FYERS_APP_ID=(str, ''),
+    FYERS_SECRET_KEY=(str, ''),
+    FYERS_CALLBACK_URL=(str, '')
 )
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -21,7 +21,7 @@ environ.Env.read_env(os.path.join(BASE_DIR, '.env'))
 SECRET_KEY = env('SECRET_KEY', default='django-insecure-default-key-for-local-dev')
 DEBUG = env('DEBUG')
 
-ALLOWED_HOSTS = ['*'] # Be specific in production!
+ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -35,7 +35,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware', # For Heroku static files
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -76,7 +76,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Kolkata' # Updated to IST since this is an Indian Market App
 USE_I18N = True
 USE_TZ = True
 
@@ -86,11 +86,13 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Custom Configuration
+# --- CRITICAL AUTH SETTINGS ---
+# This fixes the /accounts/login/ 404 error
+LOGIN_URL = '/trading/login/'
 LOGIN_REDIRECT_URL = '/trading/dashboard/'
-LOGOUT_REDIRECT_URL = '/login/'
+LOGOUT_REDIRECT_URL = '/trading/login/'
 
-# FYERS/REDIS CONFIG (Read from environment variables)
+# Custom Configuration
 FYERS_APP_ID = env('FYERS_APP_ID')
 FYERS_SECRET_KEY = env('FYERS_SECRET_KEY')
 FYERS_CALLBACK_URL = env('FYERS_CALLBACK_URL')
