@@ -147,7 +147,7 @@ def dashboard_view(request):
     # Generate the Login URL only if we have the App ID saved
     auth_url = "#"
     if creds.app_id:
-        auth_url = f"https://api.fyers.in/api/v2/generate-authcode?client_id={creds.app_id}&redirect_uri={callback_url}&response_type=code&state=sample_state"
+        auth_url = f"https://api.fyers.in/api/v3/generate-authcode?client_id={creds.app_id}&redirect_uri={callback_url}&response_type=code&state=sample_state"
 
     trades = StrategyTrade.objects.all().order_by('-created_at')[:20]
     scans = LiveScanResult.objects.all()[:10]
