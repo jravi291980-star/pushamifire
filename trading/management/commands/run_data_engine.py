@@ -2,17 +2,24 @@ import json
 import time
 import redis
 import logging
+import ssl
 from datetime import datetime
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from trading.models import FyersCredentials
 from fyers_apiv3.FyersWebsocket import data_ws
+from trading.constants import get_strategy_symbols # Import the list
 
 logger = logging.getLogger('data_engine')
-r = redis.from_url(settings.REDIS_URL)
+
+# SSL Configuration for Heroku Redis
+if settings.REDIS_URL.startswith('rediss://'):
+    r = redis.from_url(settings.REDIS_URL, ssl_cert_reqs=ssl.CERT_NONE)
+else:
+    r = redis.from_url(settings.REDIS_URL)
 
 class Command(BaseCommand):
-    help = 'Runs Fyers V3 Data Socket'
+    help = 'Runs Fyers V3 Data Socket for Strategy Symbols'
 
     def handle(self, *args, **options):
         try:
@@ -22,29 +29,25 @@ class Command(BaseCommand):
             logger.error("No active credentials.")
             return
 
-        # Symbols to Subscribe (NSE format for Fyers)
-        symbols = ["NSE:RELIANCE-EQ", "NSE:TCS-EQ", "NSE:HDFCBANK-EQ", "NSE:INFY-EQ", "NSE:SBIN-EQ"]
+        # 1. Get the Master List
+        symbols = get_strategy_symbols()
+        logger.info(f"Loaded {len(symbols)} symbols for Data Stream.")
         
         # State for candle aggregation
         candle_map = {}
 
         def on_message(message):
-            """
-            Handle incoming ticks.
-            V3 Message structure differs significantly.
-            """
-            # Validating message type
+            # Message processing logic matches V3 standards
             if not isinstance(message, dict) or 'type' not in message:
                 return
 
-            # Handle Symbol Update
-            # Note: message structure depends on 'litemode'. Assuming standard mode.
+            # Handle Symbol Update (LTP)
             if 'symbol' in message and 'ltp' in message:
                 symbol = message['symbol']
                 ltp = message['ltp']
-                timestamp = time.time() # Use local server time for aggregation consistency
+                timestamp = time.time() 
 
-                # 1. Publish Tick (For instant LTP checks)
+                # 1. Publish Tick
                 r.xadd('market_ticks', {'symbol': symbol, 'ltp': ltp, 'ts': timestamp})
 
                 # 2. Aggregate 1-Min Candle
@@ -59,23 +62,21 @@ class Command(BaseCommand):
                 c = candle_map[symbol]
                 
                 if current_min > c['minute']:
-                    # Close previous candle
+                    # Candle Closed
                     final_candle = {
                         'symbol': symbol,
                         'open': c['open'], 'high': c['high'], 
-                        'low': c['low'], 'close': c['close'], # Close is last tick of prev min
+                        'low': c['low'], 'close': c['close'],
                         'ts': datetime.fromtimestamp(c['minute'] * 60).isoformat()
                     }
                     r.xadd('candle_stream_1m', {'data': json.dumps(final_candle)})
-                    logger.info(f"Candle Closed: {symbol} @ {c['close']}")
-
+                    
                     # Start new candle
                     candle_map[symbol] = {
                         'minute': current_min,
                         'open': ltp, 'high': ltp, 'low': ltp, 'close': ltp
                     }
                 else:
-                    # Update current
                     c['high'] = max(c['high'], ltp)
                     c['low'] = min(c['low'], ltp)
                     c['close'] = ltp
@@ -87,15 +88,16 @@ class Command(BaseCommand):
             logger.info("Data Socket Closed")
 
         def on_open():
-            logger.info("Data Socket Connected. Subscribing...")
+            logger.info("Connected. Subscribing to symbols...")
+            # Fyers Data Socket can handle list subscriptions
+            # We use 'SymbolUpdate' to get LTP for ticks
             fyers_socket.subscribe(symbols=symbols, data_type="SymbolUpdate")
             fyers_socket.keep_running()
 
-        # Connect
         fyers_socket = data_ws.FyersDataSocket(
             access_token=access_token,
             log_path="",
-            litemode=True, # Litemode is faster, provides essential LTP data
+            litemode=True,
             write_to_file=False,
             reconnect=True,
             on_connect=on_open,

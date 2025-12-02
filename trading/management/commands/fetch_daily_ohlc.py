@@ -1,21 +1,26 @@
 import json
 import redis
 import logging
+import time
+import ssl
 from datetime import datetime, timedelta
 from django.conf import settings
 from django.core.management.base import BaseCommand
 from trading.models import FyersCredentials
 from trading.fyers_auth_util import get_fyers_client
+from trading.constants import get_strategy_symbols # Import List
 
 logger = logging.getLogger('data_engine')
 
+if settings.REDIS_URL.startswith('rediss://'):
+    r = redis.from_url(settings.REDIS_URL, ssl_cert_reqs=ssl.CERT_NONE)
+else:
+    r = redis.from_url(settings.REDIS_URL)
+
 class Command(BaseCommand):
-    help = 'Fetches previous day OHLC data from Fyers History API and caches it in Redis'
+    help = 'Fetches previous day OHLC for strategy symbols'
 
     def handle(self, *args, **options):
-        r = redis.from_url(settings.REDIS_URL)
-        
-        # 1. Authenticate
         try:
             creds = FyersCredentials.objects.get(is_active=True)
             fyers = get_fyers_client(creds.access_token)
@@ -23,28 +28,24 @@ class Command(BaseCommand):
             logger.error(f"Auth failed: {e}")
             return
 
-        # 2. Define Watchlist 
-        # In production, fetch this from a 'Watchlist' model or your StrategyTrade model
-        # You can also pass a CSV file path as an argument
-        symbols = [
-            "NSE:RELIANCE-EQ", "NSE:TCS-EQ", "NSE:HDFCBANK-EQ", 
-            "NSE:INFY-EQ", "NSE:SBIN-EQ", "NSE:ICICIBANK-EQ",
-            "NSE:AXISBANK-EQ", "NSE:KOTAKBANK-EQ", "NSE:LT-EQ"
-        ]
-
-        # 3. Date Calculation (Last 5 days to cover weekends/holidays)
+        symbols = get_strategy_symbols()
+        
+        # Date Setup
         today = datetime.now().date()
-        from_date = today - timedelta(days=5)
+        from_date = today - timedelta(days=5) # Look back 5 days to handle weekends
         
         range_from = from_date.strftime('%Y-%m-%d')
         range_to = today.strftime('%Y-%m-%d')
 
-        logger.info(f"Fetching History from {range_from} to {range_to}")
+        logger.info(f"Fetching History for {len(symbols)} symbols ({range_from} -> {range_to})")
 
         cached_count = 0
 
         for symbol in symbols:
             try:
+                # Rate Limit Protection
+                time.sleep(0.1) 
+                
                 data = {
                     "symbol": symbol,
                     "resolution": "D",
@@ -57,33 +58,27 @@ class Command(BaseCommand):
                 response = fyers.history(data)
 
                 if response.get('s') != 'ok':
-                    logger.warning(f"Failed to fetch {symbol}: {response.get('message')}")
+                    logger.warning(f"Failed {symbol}: {response.get('message')}")
                     continue
 
                 candles = response.get('candles', [])
                 if not candles:
-                    logger.warning(f"No candles found for {symbol}")
                     continue
 
-                # candles format: [[timestamp, open, high, low, close, volume], ...]
-                # Logic: We want the LAST COMPLETED candle.
-                
+                # Get Last Completed Candle
+                # candles = [[ts, o, h, l, c, v], ...]
                 last_candle = candles[-1]
                 candle_ts = datetime.fromtimestamp(last_candle[0])
                 
-                # If script runs AFTER market open today, the last candle might be "today's" forming candle.
-                # We want previous day.
+                # If fetching after market open, ignore today's forming candle
                 if candle_ts.date() == today:
                     if len(candles) > 1:
                         prev_day_candle = candles[-2]
                     else:
-                        logger.warning(f"Not enough history for {symbol}")
                         continue
                 else:
                     prev_day_candle = last_candle
 
-                # Structure for Redis
-                # Fyers History Response Index: 0=ts, 1=o, 2=h, 3=l, 4=c, 5=v
                 ohlc_data = {
                     "ts": prev_day_candle[0],
                     "open": prev_day_candle[1],
@@ -93,13 +88,14 @@ class Command(BaseCommand):
                     "volume": prev_day_candle[5]
                 }
 
-                # Store in Redis Hash: 'prev_day_ohlc'
-                # Key: Symbol, Value: JSON String
+                # Store in Redis Hash
                 r.hset("prev_day_ohlc", symbol, json.dumps(ohlc_data))
                 cached_count += 1
-                logger.info(f"Cached {symbol} | PDL: {ohlc_data['low']}")
+                
+                if cached_count % 50 == 0:
+                    logger.info(f"Progress: {cached_count}/{len(symbols)} cached.")
 
             except Exception as e:
-                logger.error(f"Error processing {symbol}: {e}")
+                logger.error(f"Error {symbol}: {e}")
 
-        logger.info(f"Successfully cached previous day data for {cached_count} symbols.")
+        logger.info(f"DONE. Cached Previous Day Data for {cached_count} symbols.")
