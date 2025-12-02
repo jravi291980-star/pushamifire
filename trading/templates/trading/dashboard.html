@@ -2,103 +2,166 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fyers Strategy Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Force dark inputs for Django Forms and manual inputs */
+        input, select, textarea, .input-field {
+            background-color: #374151 !important; /* Tailwind gray-700 */
+            color: #ffffff !important;            /* White text */
+            border: 1px solid #4b5563 !important; /* Tailwind gray-600 */
+            padding: 0.5rem;
+            border-radius: 0.375rem;
+        }
+        input:focus {
+            outline: 2px solid #3b82f6; /* Blue focus ring */
+            border-color: #3b82f6;
+        }
+    </style>
 </head>
 <body class="bg-gray-900 text-gray-100 font-sans p-6">
     <div class="max-w-7xl mx-auto">
-        <h1 class="text-3xl font-bold mb-8 text-blue-400">Cash Breakdown Strategy Engine</h1>
+        <div class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-blue-400">Cash Breakdown Engine</h1>
+            <div class="space-x-4">
+                <span class="text-sm text-gray-400">User: {{ request.user.username }}</span>
+                <form action="{% url 'trading:logout' %}" method="post" class="inline">
+                    {% csrf_token %}
+                    <button type="submit" class="text-sm text-red-400 hover:text-red-300 underline">Logout</button>
+                </form>
+            </div>
+        </div>
 
-        <!-- Settings Section -->
-        <div class="bg-gray-800 p-6 rounded-lg mb-8 shadow-lg">
-            <h2 class="text-xl font-bold mb-4 border-b border-gray-700 pb-2">Global Risk Settings</h2>
-            <form method="post" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <!-- API Status & Auth -->
+        <div class="bg-gray-800 p-6 rounded-lg mb-8 shadow-lg border border-gray-700">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-xl font-bold mb-1">API Connection</h2>
+                    <p class="text-sm text-gray-400">
+                        Status: 
+                        {% if credentials.is_active and credentials.access_token %}
+                            <span class="text-green-400 font-bold">CONNECTED</span>
+                        {% else %}
+                            <span class="text-red-400 font-bold">DISCONNECTED</span>
+                        {% endif %}
+                    </p>
+                </div>
+                <div>
+                    <a href="https://api.fyers.in/api/v2/generate-authcode?client_id={{ credentials.app_id }}&redirect_uri={{ callback_url }}&response_type=code&state=sample_state" 
+                       target="_blank"
+                       class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 px-4 rounded text-sm">
+                        1. Login to Fyers
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Global Settings Section -->
+        <div class="bg-gray-800 p-6 rounded-lg mb-8 shadow-lg border border-gray-700">
+            <h2 class="text-xl font-bold mb-4 border-b border-gray-700 pb-2 text-yellow-400">Strategy Risk Settings</h2>
+            
+            <form method="post" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {% csrf_token %}
                 <input type="hidden" name="update_settings" value="1">
+                
+                <!-- Iterate through Django Form Fields -->
                 {% for field in settings_form %}
-                <div>
-                    <label class="block text-sm text-gray-400">{{ field.label }}</label>
-                    {{ field }}
+                <div class="flex flex-col">
+                    <label class="mb-1 text-sm font-semibold text-gray-300">{{ field.label }}</label>
+                    {{ field }} <!-- This renders the input box -->
+                    {% if field.help_text %}
+                        <small class="text-gray-500 text-xs mt-1">{{ field.help_text }}</small>
+                    {% endif %}
                 </div>
                 {% endfor %}
+
                 <div class="flex items-end">
-                    <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded w-full">
-                        Update Settings
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded w-full shadow-md">
+                        Save Configuration
                     </button>
                 </div>
             </form>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <!-- Active Trades -->
-            <div class="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-lg">
-                <h2 class="text-xl font-bold mb-4 text-green-400">Algo Trades</h2>
+            <!-- Active Trades Table -->
+            <div class="lg:col-span-2 bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-green-400">Live Trades</h2>
+                    <span class="text-xs text-gray-500 animate-pulse">● Live Updating</span>
+                </div>
+                
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse">
                         <thead>
-                            <tr class="text-gray-400 border-b border-gray-700">
-                                <th class="p-2">Symbol</th>
-                                <th class="p-2">Status</th>
-                                <th class="p-2">Entry/SL/Tgt</th>
-                                <th class="p-2">PnL</th>
-                                <th class="p-2">Action</th>
+                            <tr class="text-gray-400 border-b border-gray-600 text-sm uppercase">
+                                <th class="p-3">Symbol</th>
+                                <th class="p-3">Status</th>
+                                <th class="p-3">Levels (E/S/T)</th>
+                                <th class="p-3">PnL</th>
+                                <th class="p-3">Action</th>
                             </tr>
                         </thead>
-                        <tbody>
+                        <tbody class="text-sm">
                             {% for trade in trades %}
-                            <tr class="border-b border-gray-700 hover:bg-gray-700">
-                                <td class="p-2 font-mono">{{ trade.symbol }}</td>
-                                <td class="p-2">
-                                    <span class="px-2 py-1 rounded text-xs font-bold
-                                        {% if trade.status == 'OPEN' %}bg-green-900 text-green-200
-                                        {% elif trade.status == 'PENDING' %}bg-yellow-900 text-yellow-200
-                                        {% else %}bg-gray-600{% endif %}">
+                            <tr class="border-b border-gray-700 hover:bg-gray-750 transition duration-150">
+                                <td class="p-3 font-mono font-bold text-blue-200">{{ trade.symbol }}</td>
+                                <td class="p-3">
+                                    <span class="px-2 py-1 rounded text-xs font-bold tracking-wide
+                                        {% if trade.status == 'OPEN' %}bg-green-900 text-green-200 border border-green-700
+                                        {% elif trade.status == 'PENDING' %}bg-yellow-900 text-yellow-200 border border-yellow-700
+                                        {% elif trade.status == 'CLOSED' %}bg-gray-700 text-gray-300
+                                        {% else %}bg-red-900 text-red-200{% endif %}">
                                         {{ trade.status }}
                                     </span>
                                 </td>
-                                <td class="p-2 text-xs">
-                                    E: {{ trade.entry_level }}<br>
-                                    S: {{ trade.stop_loss }}<br>
-                                    T: {{ trade.target_price }}
+                                <td class="p-3 text-xs space-y-1">
+                                    <div class="text-gray-300">E: <span class="text-white">{{ trade.entry_level }}</span></div>
+                                    <div class="text-red-300">S: {{ trade.stop_loss }}</div>
+                                    <div class="text-green-300">T: {{ trade.target_price }}</div>
                                 </td>
-                                <td class="p-2 font-bold {% if trade.pnl > 0 %}text-green-400{% elif trade.pnl < 0 %}text-red-400{% endif %}">
+                                <td class="p-3 font-bold text-base
+                                    {% if trade.pnl > 0 %}text-green-400{% elif trade.pnl < 0 %}text-red-400{% else %}text-gray-500{% endif %}">
                                     {{ trade.pnl|default:"--" }}
                                 </td>
-                                <td class="p-2">
+                                <td class="p-3">
                                     {% if trade.status == 'OPEN' %}
                                     <form method="post">
                                         {% csrf_token %}
                                         <input type="hidden" name="square_off" value="1">
                                         <input type="hidden" name="trade_id" value="{{ trade.id }}">
-                                        <button class="bg-red-600 hover:bg-red-500 text-white text-xs py-1 px-2 rounded">
+                                        <button class="bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-1 px-3 rounded shadow hover:shadow-md transition">
                                             Square Off
                                         </button>
                                     </form>
+                                    {% else %}
+                                    <span class="text-gray-600">-</span>
                                     {% endif %}
                                 </td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="5" class="p-4 text-center text-gray-500">No trades yet today.</td></tr>
+                            <tr><td colspan="5" class="p-6 text-center text-gray-500 italic">No trades recorded today.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <!-- Live Scanner -->
-            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
-                <h2 class="text-xl font-bold mb-4 text-purple-400">Live Scanner</h2>
-                <ul class="space-y-2">
+            <!-- Live Scanner Results -->
+            <div class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 h-fit">
+                <h2 class="text-xl font-bold mb-4 text-purple-400 border-b border-gray-700 pb-2">Scanner Logs</h2>
+                <ul class="space-y-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
                     {% for scan in scans %}
-                    <li class="border-b border-gray-700 pb-2">
-                        <div class="flex justify-between">
-                            <span class="font-bold">{{ scan.symbol }}</span>
-                            <span class="text-xs text-gray-400">{{ scan.scan_time|date:"H:i:s" }}</span>
+                    <li class="bg-gray-900 p-3 rounded border-l-4 border-purple-500">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-white">{{ scan.symbol }}</span>
+                            <span class="text-xs text-gray-500 font-mono">{{ scan.scan_time|date:"H:i:s" }}</span>
                         </div>
-                        <p class="text-xs text-gray-300">{{ scan.pattern }}</p>
+                        <p class="text-xs text-gray-400">{{ scan.pattern }}</p>
                     </li>
                     {% empty %}
-                    <li class="text-gray-500 italic">No patterns detected.</li>
+                    <li class="text-gray-500 italic text-center py-4">Waiting for signals...</li>
                     {% endfor %}
                 </ul>
             </div>
