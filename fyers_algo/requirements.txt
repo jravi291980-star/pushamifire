@@ -1,0 +1,8 @@
+Django==4.2
+fyers-apiv3==3.0.6
+redis==5.0.1
+django-environ==0.11.2
+gunicorn==21.2.0
+psycopg2-binary==2.9.9
+whitenoise==6.6.0
+channels==4.0.0
